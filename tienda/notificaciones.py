@@ -1,6 +1,7 @@
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
+# Función para notificar a un usuario
 def notificar_usuario(rol, usuario_id, contenido):
     channel_layer = get_channel_layer()
     group_name = f"notificaciones_{rol}_{usuario_id}"
