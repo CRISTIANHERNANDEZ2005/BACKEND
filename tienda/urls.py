@@ -24,6 +24,9 @@ router.register(r'detalles-pedido', DetallePedidoViewSet)
 router.register(r'comentarios', ComentarioViewSet)
 router.register(r'calificaciones', CalificacionViewSet)
 router.register(r'likes', LikeViewSet)
+router.register(r'estados-venta', EstadoVentaViewSet)
+router.register(r'compras', CompraViewSet)
+router.register(r'detalles-compra', DetalleCompraViewSet)
 
 urlpatterns = [
     path('registro/', RegistroUsuarioView.as_view(), name='registro'),

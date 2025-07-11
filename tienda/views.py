@@ -3,7 +3,11 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.contrib.auth import login, logout
-from .models import Usuario, Categoria, Subcategoria, Producto, Pedido, DetallePedido, Comentario, Calificacion, Like, Carrito, CarritoItem
+from .models import (
+    Usuario, Categoria, Subcategoria, Producto, Pedido, DetallePedido,
+    Comentario, Calificacion, Like, Carrito, CarritoItem, 
+    LikeComentario, Notificacion, HistorialAccion, EstadoVenta, Compra, DetalleCompra, 
+)
 from .serializers import (
     UsuarioSerializer, UsuarioPerfilSerializer, RegistroUsuarioSerializer, LoginSerializer,
     CategoriaSerializer, SubcategoriaSerializer, ProductoSerializer,
@@ -20,12 +24,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from .models import Comentario, LikeComentario, Notificacion
 from rest_framework import generics
 
 from rest_framework.pagination import PageNumberPagination
 from .models import Notificacion
-from .serializers import NotificacionSerializer, CarritoSerializer, CarritoItemSerializer, CarritoItemProductoSerializer
+from .serializers import NotificacionSerializer, CarritoSerializer
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -696,6 +699,115 @@ class AdminStatsView(APIView):
         })
 
 # CRUD de modelos principales
+
+class EstadoVentaViewSet(viewsets.ModelViewSet):
+    serializer_class = EstadoVentaSerializer
+    queryset = EstadoVenta.objects.all()
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_queryset(self):
+        if self.request.user.is_authenticated and getattr(self.request.user, 'es_admin', False):
+            return EstadoVenta.objects.all()
+        # Solo lectura para clientes: solo estados activos
+        return EstadoVenta.objects.filter(activo=True)
+
+    def perform_create(self, serializer):
+        serializer.save()
+        logger.info(f"Estado de venta creado por admin {self.request.user.numero}")
+
+    def perform_update(self, serializer):
+        serializer.save()
+        logger.info(f"Estado de venta actualizado por admin {self.request.user.numero}")
+
+    def perform_destroy(self, instance):
+        instance.activo = False
+        instance.save()
+        logger.info(f"Estado de venta desactivado por admin {self.request.user.numero}")
+
+class CompraViewSet(viewsets.ModelViewSet):
+    serializer_class = CompraSerializer
+    queryset = Compra.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAdminUser()]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = Compra.objects.filter(activo=True)
+        if getattr(user, 'es_admin', False):
+            # Filtros avanzados para admin
+            usuario = self.request.query_params.get('usuario')
+            fecha_min = self.request.query_params.get('fecha_min')
+            fecha_max = self.request.query_params.get('fecha_max')
+            if usuario:
+                qs = qs.filter(usuario__numero=usuario)
+            if fecha_min:
+                qs = qs.filter(creado__gte=fecha_min)
+            if fecha_max:
+                qs = qs.filter(creado__lte=fecha_max)
+            return qs.order_by('-creado')
+        # Cliente: solo sus compras
+        return qs.filter(usuario=user).order_by('-creado')
+
+    def perform_create(self, serializer):
+        # Solo admin puede crear compras (ingreso de inventario)
+        if not getattr(self.request.user, 'es_admin', False):
+            raise PermissionDenied("Solo el administrador puede registrar compras.")
+        compra = serializer.save(usuario=self.request.user)
+        logger.info(f"Compra registrada por admin {self.request.user.numero}")
+
+    def perform_update(self, serializer):
+        if not getattr(self.request.user, 'es_admin', False):
+            raise PermissionDenied("Solo el administrador puede editar compras.")
+        serializer.save()
+        logger.info(f"Compra actualizada por admin {self.request.user.numero}")
+
+    def perform_destroy(self, instance):
+        if not getattr(self.request.user, 'es_admin', False):
+            raise PermissionDenied("Solo el administrador puede eliminar compras.")
+        instance.activo = False
+        instance.save()
+        logger.info(f"Compra desactivada por admin {self.request.user.numero}")
+
+class DetalleCompraViewSet(viewsets.ModelViewSet):
+    serializer_class = DetalleCompraSerializer
+    queryset = DetalleCompra.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAdminUser()]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = DetalleCompra.objects.all()
+        if getattr(user, 'es_admin', False):
+            return qs
+        # Cliente: solo detalles de sus compras
+        return qs.filter(compra__usuario=user)
+
+    def perform_create(self, serializer):
+        if not getattr(self.request.user, 'es_admin', False):
+            raise PermissionDenied("Solo el administrador puede añadir detalles de compra.")
+        serializer.save()
+        logger.info(f"Detalle de compra registrado por admin {self.request.user.numero}")
+
+    def perform_update(self, serializer):
+        if not getattr(self.request.user, 'es_admin', False):
+            raise PermissionDenied("Solo el administrador puede editar detalles de compra.")
+        serializer.save()
+        logger.info(f"Detalle de compra actualizado por admin {self.request.user.numero}")
+
+    def perform_destroy(self, instance):
+        if not getattr(self.request.user, 'es_admin', False):
+            raise PermissionDenied("Solo el administrador puede eliminar detalles de compra.")
+        instance.delete()
+        logger.info(f"Detalle de compra eliminado por admin {self.request.user.numero}")
+
 class IsAdminOrReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):
         if request.method in permissions.SAFE_METHODS:
@@ -738,10 +850,32 @@ class ProductoViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance):
-        if instance.usuario != self.request.user:
-            logger.warning(f"Usuario {self.request.user.numero} intentó eliminar producto ajeno #{instance.id}")
-            raise PermissionDenied("Solo puedes eliminar tus propios productos.")
+        from .models import Notificacion, Usuario
+        from .notificaciones import notificar_usuario as notificar_ws
+        # Solo el dueño o admin puede eliminar
+        if instance.usuario != self.request.user and not getattr(self.request.user, 'es_admin', False):
+            logger.warning(f"Usuario {self.request.user.numero} intentó eliminar pedido ajeno #{instance.id}")
+            raise PermissionDenied("Solo puedes eliminar tus propios pedidos.")
+        # Notificación a cliente y admin
+        mensaje_cliente = f'Tu pedido #{instance.id} ha sido cancelado/eliminado.'
+        mensaje_admin = f'El pedido #{instance.id} de {instance.usuario.nombre} ha sido cancelado/eliminado.'
+        # Notifica y guarda para el cliente
+        Notificacion.objects.create(
+            usuario=instance.usuario,
+            tipo='pedido_cancelado',
+            mensaje=mensaje_cliente
+        )
+        notificar_ws(instance.usuario, mensaje_cliente, tipo='pedido_cancelado')
+        # Notifica y guarda para el admin (si aplica)
+        if getattr(self.request.user, 'es_admin', False):
+            Notificacion.objects.create(
+                usuario=self.request.user,
+                tipo='pedido_cancelado',
+                mensaje=mensaje_admin
+            )
+            notificar_ws(self.request.user, mensaje_admin, tipo='pedido_cancelado')
         instance.delete()
+        logger.info(f"Pedido #{instance.id} eliminado/cancelado y notificaciones enviadas.")
 
 class PedidoViewSet(viewsets.ModelViewSet):
     serializer_class = PedidoSerializer
@@ -754,30 +888,101 @@ class PedidoViewSet(viewsets.ModelViewSet):
         return Pedido.objects.filter(usuario=self.request.user)
 
     def perform_create(self, serializer):
+        from .models import Notificacion, Usuario
+        from .notificaciones import notificar_usuario as notificar_ws
+        # Permitir que el admin registre pedidos para cualquier cliente
         if getattr(self.request.user, 'es_admin', False):
-            raise PermissionDenied("Solo clientes pueden crear pedidos.")
-        serializer.save(usuario=self.request.user)
+            data = self.request.data.copy()
+            numero = data.get('numero')
+            nombre = data.get('nombre')
+            apellido = data.get('apellido')
+            if not numero or not nombre or not apellido:
+                raise PermissionDenied("Debe proporcionar número, nombre y apellido del cliente.")
+            usuario = Usuario.objects.filter(numero=numero).first()
+            nuevo_cliente = False
+            if not usuario:
+                usuario = Usuario.objects.create_user(
+                    numero=numero,
+                    nombre=nombre,
+                    apellido=apellido,
+                    password=numero
+                )
+                logger.info(f"Cliente creado automáticamente por admin {self.request.user.numero}: {numero}")
+                nuevo_cliente = True
+            pedido = serializer.save(usuario=usuario, creado_por=self.request.user)
+            logger.info(f"Pedido registrado por admin {self.request.user.numero} para cliente {usuario.numero}")
+            # Notificación persistente y en tiempo real para el cliente
+            mensaje_cliente = (
+                f'Se ha registrado un pedido a tu nombre. Puedes iniciar sesión usando tu número como contraseña.'
+                if nuevo_cliente else f'Se ha registrado un nuevo pedido a tu nombre.'
+            )
+            Notificacion.objects.create(
+                usuario=usuario,
+                tipo='nuevo_pedido',
+                mensaje=mensaje_cliente
+            )
+            notificar_ws(usuario, mensaje_cliente, tipo='nuevo_pedido')
+            # Notificación persistente y en tiempo real para el admin
+            mensaje_admin = f'Has registrado un pedido para el cliente {usuario.nombre} ({usuario.numero}).'
+            Notificacion.objects.create(
+                usuario=self.request.user,
+                tipo='nuevo_pedido',
+                mensaje=mensaje_admin
+            )
+            notificar_ws(self.request.user, mensaje_admin, tipo='nuevo_pedido')
+            return
+        # Clientes normales: lógica previa
+        pedido = serializer.save(usuario=self.request.user)
         logger.info(f"Pedido creado por usuario {self.request.user.numero}")
-        # Notificar a todos los admins (puedes mejorar para múltiples admins)
-        admin = Usuario.objects.filter(es_admin=True, esta_activo=True).first()
-        if admin:
-            notificar_usuario('admin', admin.id, {
-                'tipo': 'nuevo_pedido',
-                'mensaje': f'Nuevo pedido #{serializer.instance.id} realizado por {self.request.user.nombre}.'
-            })
+        # Notificar a todos los admins activos
+        admins = Usuario.objects.filter(es_admin=True, esta_activo=True)
+        for admin in admins:
+            mensaje_admin = f'Nuevo pedido #{pedido.id} realizado por {self.request.user.nombre}.'
+            Notificacion.objects.create(
+                usuario=admin,
+                tipo='nuevo_pedido',
+                mensaje=mensaje_admin
+            )
+            notificar_ws(admin, mensaje_admin, tipo='nuevo_pedido')
+        # Notificar y guardar para el cliente
+        mensaje_cliente = f'Tu pedido #{pedido.id} ha sido registrado exitosamente.'
+        Notificacion.objects.create(
+            usuario=self.request.user,
+            tipo='nuevo_pedido',
+            mensaje=mensaje_cliente
+        )
+        notificar_ws(self.request.user, mensaje_cliente, tipo='nuevo_pedido')
 
     def perform_update(self, serializer):
         instance = self.get_object()
-        if instance.usuario != self.request.user:
+        if instance.usuario != self.request.user and not getattr(self.request.user, 'es_admin', False):
             logger.warning(f"Usuario {self.request.user.numero} intentó editar pedido ajeno #{instance.id}")
             raise PermissionDenied("Solo puedes editar tus propios pedidos.")
-        serializer.save()
-        # Notificar al cliente si el admin cambia el estado del pedido
-        if self.request.user.es_admin:
-            notificar_usuario('cliente', instance.usuario.id, {
-                'tipo': 'estado_pedido',
-                'mensaje': f'El estado de tu pedido #{instance.id} ha cambiado a {serializer.validated_data.get("estado", instance.estado)}.'
-            })
+        old_estado = instance.estado
+        pedido_actualizado = serializer.save()
+        # Notificación profesional a cliente y admin sobre cambio de estado
+        if getattr(self.request.user, 'es_admin', False):
+            nuevo_estado = serializer.validated_data.get("estado", old_estado)
+            mensaje_cliente = f'El estado de tu pedido #{instance.id} ha cambiado a {nuevo_estado}.'
+            mensaje_admin = f'Se ha actualizado el estado del pedido #{instance.id} de {instance.usuario.nombre} a {nuevo_estado}.'
+            # Notifica y guarda en panel del cliente
+            from .models import Notificacion, Usuario
+            from .notificaciones import notificar_usuario as notificar_ws
+            Notificacion.objects.create(
+                usuario=instance.usuario,
+                tipo='estado_pedido',
+                mensaje=mensaje_cliente
+            )
+            notificar_ws(instance.usuario, mensaje_cliente, tipo='estado_pedido')
+            # Notifica y guarda en panel del admin que realizó la acción
+            Notificacion.objects.create(
+                usuario=self.request.user,
+                tipo='estado_pedido',
+                mensaje=mensaje_admin
+            )
+            notificar_ws(self.request.user, mensaje_admin, tipo='estado_pedido')
+            logger.info(f"Cambio de estado de pedido #{instance.id} notificado a cliente y admin.")
+
 
     # Endpoint para descargar PDF del pedido
     def retrieve(self, request, *args, **kwargs):
@@ -828,34 +1033,49 @@ class ComentarioViewSet(viewsets.ModelViewSet):
         return Comentario.objects.filter(producto__activo=True)
 
     def perform_create(self, serializer):
+        from .models import Notificacion, Usuario
+        from .notificaciones import notificar_usuario as notificar_ws
         comentario = serializer.save(usuario=self.request.user)
         logger.info(f"Comentario creado por usuario {self.request.user.numero}")
-        # Notificar al admin de nuevo comentario
-        admin = Usuario.objects.filter(es_admin=True, esta_activo=True).first()
-        if admin:
-            notificar_usuario('admin', admin.id, {
-                'tipo': 'nuevo_comentario',
-                'mensaje': f'Nuevo comentario en producto #{comentario.producto.id} por {self.request.user.nombre}.'
-            })
+        # Notificación persistente y en tiempo real para admin
+        admins = Usuario.objects.filter(es_admin=True, esta_activo=True)
+        for admin in admins:
+            mensaje_admin = f'Nuevo comentario en producto #{comentario.producto.id} por {self.request.user.nombre}.'
+            Notificacion.objects.create(usuario=admin, tipo='nuevo_comentario', mensaje=mensaje_admin)
+            notificar_ws(admin, mensaje_admin, tipo='nuevo_comentario')
         # Notificar al dueño del producto
-        if comentario.producto.usuario:
-            notificar_usuario('cliente', comentario.producto.usuario.id, {
-                'tipo': 'nuevo_comentario',
-                'mensaje': f'Nuevo comentario en tu producto #{comentario.producto.id} por {self.request.user.nombre}.'
-            })
+        if hasattr(comentario.producto, 'usuario') and comentario.producto.usuario:
+            mensaje_cliente = f'Nuevo comentario en tu producto #{comentario.producto.id} por {self.request.user.nombre}.'
+            Notificacion.objects.create(usuario=comentario.producto.usuario, tipo='nuevo_comentario', mensaje=mensaje_cliente)
+            notificar_ws(comentario.producto.usuario, mensaje_cliente, tipo='nuevo_comentario')
+
 
     def perform_update(self, serializer):
+        from .models import Notificacion
+        from .notificaciones import notificar_usuario as notificar_ws
         instance = self.get_object()
         if instance.usuario != self.request.user:
             logger.warning(f"Usuario {self.request.user.numero} intentó editar comentario ajeno #{instance.id}")
             raise PermissionDenied("Solo puedes editar tus propios comentarios.")
         serializer.save()
+        # Notificación para el usuario que edita
+        mensaje = f'Has actualizado tu comentario #{instance.id}.'
+        Notificacion.objects.create(usuario=self.request.user, tipo='comentario_actualizado', mensaje=mensaje)
+        notificar_ws(self.request.user, mensaje, tipo='comentario_actualizado')
+
 
     def perform_destroy(self, instance):
+        from .models import Notificacion
+        from .notificaciones import notificar_usuario as notificar_ws
         if instance.usuario != self.request.user:
             logger.warning(f"Usuario {self.request.user.numero} intentó eliminar comentario ajeno #{instance.id}")
             raise PermissionDenied("Solo puedes eliminar tus propios comentarios.")
+        # Notificación para el usuario que elimina
+        mensaje = f'Has eliminado tu comentario #{instance.id}.'
+        Notificacion.objects.create(usuario=self.request.user, tipo='comentario_eliminado', mensaje=mensaje)
+        notificar_ws(self.request.user, mensaje, tipo='comentario_eliminado')
         instance.delete()
+
 
 class CalificacionViewSet(viewsets.ModelViewSet):
     serializer_class = CalificacionSerializer
@@ -866,27 +1086,49 @@ class CalificacionViewSet(viewsets.ModelViewSet):
         return Calificacion.objects.filter(producto__activo=True)
 
     def perform_create(self, serializer):
-        serializer.save(usuario=self.request.user)
+        from .models import Notificacion, Usuario
+        from .notificaciones import notificar_usuario as notificar_ws
+        calificacion = serializer.save(usuario=self.request.user)
         logger.info(f"Calificación creada por usuario {self.request.user.numero}")
+        # Notificación persistente y en tiempo real para admin
+        admins = Usuario.objects.filter(es_admin=True, esta_activo=True)
+        for admin in admins:
+            mensaje_admin = f'Nueva calificación en producto #{calificacion.producto.id} por {self.request.user.nombre}.'
+            Notificacion.objects.create(usuario=admin, tipo='nueva_calificacion', mensaje=mensaje_admin)
+            notificar_ws(admin, mensaje_admin, tipo='nueva_calificacion')
         # Notificar al dueño del producto
-        if serializer.instance.producto.usuario:
-            notificar_usuario('cliente', serializer.instance.producto.usuario.id, {
-                'tipo': 'nueva_calificacion',
-                'mensaje': f'Nueva calificación en tu producto #{serializer.instance.producto.id} por {self.request.user.nombre}.'
-            })
+        if hasattr(calificacion.producto, 'usuario') and calificacion.producto.usuario:
+            mensaje_cliente = f'Nueva calificación en tu producto #{calificacion.producto.id} por {self.request.user.nombre}.'
+            Notificacion.objects.create(usuario=calificacion.producto.usuario, tipo='nueva_calificacion', mensaje=mensaje_cliente)
+            notificar_ws(calificacion.producto.usuario, mensaje_cliente, tipo='nueva_calificacion')
+
 
     def perform_update(self, serializer):
+        from .models import Notificacion
+        from .notificaciones import notificar_usuario as notificar_ws
         instance = self.get_object()
         if instance.usuario != self.request.user:
             logger.warning(f"Usuario {self.request.user.numero} intentó editar calificación ajena #{instance.id}")
             raise PermissionDenied("Solo puedes editar tus propias calificaciones.")
         serializer.save()
+        # Notificación para el usuario que edita
+        mensaje = f'Has actualizado tu calificación #{instance.id}.'
+        Notificacion.objects.create(usuario=self.request.user, tipo='calificacion_actualizada', mensaje=mensaje)
+        notificar_ws(self.request.user, mensaje, tipo='calificacion_actualizada')
+
 
     def perform_destroy(self, instance):
+        from .models import Notificacion
+        from .notificaciones import notificar_usuario as notificar_ws
         if instance.usuario != self.request.user:
             logger.warning(f"Usuario {self.request.user.numero} intentó eliminar calificación ajena #{instance.id}")
             raise PermissionDenied("Solo puedes eliminar tus propias calificaciones.")
+        # Notificación para el usuario que elimina
+        mensaje = f'Has eliminado tu calificación #{instance.id}.'
+        Notificacion.objects.create(usuario=self.request.user, tipo='calificacion_eliminada', mensaje=mensaje)
+        notificar_ws(self.request.user, mensaje, tipo='calificacion_eliminada')
         instance.delete()
+
 
 class LikeViewSet(viewsets.ModelViewSet):
     serializer_class = LikeSerializer
@@ -897,15 +1139,22 @@ class LikeViewSet(viewsets.ModelViewSet):
         return Like.objects.filter(producto__activo=True)
 
     def perform_create(self, serializer):
+        from .models import Notificacion, Usuario
+        from .notificaciones import notificar_usuario as notificar_ws
         like = serializer.save(usuario=self.request.user)
         logger.info(f"Like creado por usuario {self.request.user.numero}")
-        # Notificar al admin de nuevo like
-        admin = Usuario.objects.filter(es_admin=True, esta_activo=True).first()
-        if admin:
-            notificar_usuario('admin', admin.id, {
-                'tipo': 'nuevo_like',
-                'mensaje': f'Nuevo like en producto #{like.producto.id} por {self.request.user.nombre}.'
-            })
+        # Notificación persistente y en tiempo real para admin
+        admins = Usuario.objects.filter(es_admin=True, esta_activo=True)
+        for admin in admins:
+            mensaje_admin = f'Nuevo like en producto #{like.producto.id} por {self.request.user.nombre}.'
+            Notificacion.objects.create(usuario=admin, tipo='nuevo_like', mensaje=mensaje_admin)
+            notificar_ws(admin, mensaje_admin, tipo='nuevo_like')
+        # Notificación para el cliente si el producto tiene dueño
+        if hasattr(like.producto, 'usuario') and like.producto.usuario:
+            mensaje_cliente = f'Alguien dio like a tu producto #{like.producto.id}.'
+            Notificacion.objects.create(usuario=like.producto.usuario, tipo='nuevo_like', mensaje=mensaje_cliente)
+            notificar_ws(like.producto.usuario, mensaje_cliente, tipo='nuevo_like')
+
 
     def perform_update(self, serializer):
         instance = self.get_object()

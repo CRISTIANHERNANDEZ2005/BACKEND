@@ -125,3 +125,20 @@ class LikeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Like
         fields = '__all__'
+
+class EstadoVentaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EstadoVenta
+        fields = '__all__'
+
+class DetalleCompraSerializer(serializers.ModelSerializer):
+    producto_nombre = serializers.CharField(source='producto.nombre', read_only=True)
+    class Meta:
+        model = DetalleCompra
+        fields = ['id', 'compra', 'producto', 'producto_nombre', 'cantidad', 'precio_unitario']
+
+class CompraSerializer(serializers.ModelSerializer):
+    detalles = DetalleCompraSerializer(many=True, read_only=True)
+    class Meta:
+        model = Compra
+        fields = ['id', 'usuario', 'total', 'creado', 'actualizado', 'observaciones', 'activo', 'detalles']
