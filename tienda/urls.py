@@ -13,6 +13,8 @@ from .views import (
     HistorialAccionClienteView, HistorialAccionAdminView, AccionesDisponiblesView,
     ProductosDestacadosView, DestacarProductoView, CarritoMigrarView, ComprarView,
     ComprasUsuarioView, ComprasAdminView, 
+    EstadoVentaViewSet, CompraViewSet, DetalleCompraViewSet,
+    
 )
 
 router = DefaultRouter()
