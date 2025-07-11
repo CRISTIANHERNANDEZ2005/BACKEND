@@ -56,7 +56,7 @@ __pycache__/
 
 # Logs
 *.log
-logs/
+logs/*
 !logs/.gitkeep
 
 # Render
