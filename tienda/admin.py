@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Usuario, Categoria, Subcategoria, Producto, Pedido, DetallePedido, Comentario, Calificacion, Like
+from .models import Usuario, Categoria, Subcategoria, Producto, Pedido, DetallePedido, Comentario, Calificacion, Like, ImagenProducto, Carrito, CarritoItem, EstadoVenta, Compra, DetalleCompra
 from django.contrib.auth.admin import UserAdmin
 
 class UsuarioAdmin(UserAdmin):
@@ -25,9 +25,33 @@ class UsuarioAdmin(UserAdmin):
 admin.site.register(Usuario, UsuarioAdmin)
 admin.site.register(Categoria)
 admin.site.register(Subcategoria)
-admin.site.register(Producto)
+class ImagenProductoInline(admin.StackedInline):
+    model = ImagenProducto
+    extra = 1
+
+class ProductoAdmin(admin.ModelAdmin):
+    inlines = [ImagenProductoInline]
+    list_display = ('nombre', 'subcategoria', 'precio', 'stock', 'destacado', 'activo')
+    list_filter = ('subcategoria', 'destacado', 'activo')
+    search_fields = ('nombre',)
+
+admin.site.register(Producto, ProductoAdmin)
 admin.site.register(Pedido)
 admin.site.register(DetallePedido)
 admin.site.register(Comentario)
 admin.site.register(Calificacion)
 admin.site.register(Like)
+admin.site.register(EstadoVenta)
+admin.site.register(Compra)
+admin.site.register(DetalleCompra)
+
+class CarritoItemInline(admin.TabularInline):
+    model = CarritoItem
+    extra = 0
+
+class CarritoAdmin(admin.ModelAdmin):
+    inlines = [CarritoItemInline]
+    list_display = ('usuario', 'actualizado')
+    search_fields = ('usuario__numero',)
+
+admin.site.register(Carrito, CarritoAdmin)

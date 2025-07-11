@@ -38,6 +38,11 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     esta_activo = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     fecha_registro = models.DateTimeField(default=timezone.now)
+    # Seguridad y auditoría
+    intentos_fallidos = models.PositiveIntegerField(default=0)
+    bloqueado_hasta = models.DateTimeField(null=True, blank=True)
+    ultimo_login_exitoso = models.DateTimeField(null=True, blank=True)
+    ultimo_ip = models.CharField(max_length=45, blank=True, null=True)
 
     USERNAME_FIELD = 'numero'
     REQUIRED_FIELDS = ['nombre', 'apellido']
@@ -46,6 +51,16 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return f"{self.nombre} {self.apellido} ({self.numero})"
+
+class HistorialAccion(models.Model):
+    usuario = models.ForeignKey('Usuario', on_delete=models.CASCADE, related_name='historial_acciones')
+    accion = models.CharField(max_length=100)
+    detalle = models.TextField(blank=True, null=True)
+    fecha = models.DateTimeField(default=timezone.now)
+    ip = models.CharField(max_length=45, blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.usuario} - {self.accion} - {self.fecha.strftime('%Y-%m-%d %H:%M:%S')}"
 
 # -----------------------------
 # MODELOS DE CATEGORÍA Y PRODUCTOS
@@ -81,24 +96,78 @@ class Producto(models.Model):
     def __str__(self):
         return self.nombre
 
+class ImagenProducto(models.Model):
+    producto = models.ForeignKey(Producto, related_name='imagenes', on_delete=models.CASCADE)
+    imagen = models.ImageField(upload_to='productos/imagenes/')
+    descripcion = models.CharField(max_length=255, blank=True, null=True)
+    orden = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return f"Imagen de {self.producto.nombre} ({self.id})"
+
+# -----------------------------
+# MODELOS DE CARRITO PERSISTENTE
+# -----------------------------
+
+class Carrito(models.Model):
+    usuario = models.OneToOneField(Usuario, on_delete=models.CASCADE, related_name='carrito')
+    creado = models.DateTimeField(auto_now_add=True)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Carrito de {self.usuario.numero}"
+
+class CarritoItem(models.Model):
+    carrito = models.ForeignKey(Carrito, on_delete=models.CASCADE, related_name='items')
+    producto = models.ForeignKey(Producto, on_delete=models.CASCADE)
+    cantidad = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        unique_together = ('carrito', 'producto')
+
+    def __str__(self):
+        return f"{self.cantidad} x {self.producto.nombre} ({self.carrito.usuario.numero})"
+
 # -----------------------------
 # MODELOS DE PEDIDO Y DETALLE
 # -----------------------------
+class EstadoVenta(models.Model):
+    nombre = models.CharField(max_length=30, unique=True)
+    activo = models.BooleanField(default=True)
+    orden = models.PositiveIntegerField(default=0)
+    def __str__(self):
+        return self.nombre
+
 class Pedido(models.Model):
-    ESTADOS = [
-        ('pendiente', 'Pendiente'),
-        ('completado', 'Completado'),
-        ('cancelado', 'Cancelado'),
-    ]
     usuario = models.ForeignKey('Usuario', related_name='pedidos', on_delete=models.CASCADE)
-    estado = models.CharField(max_length=10, choices=ESTADOS, default='pendiente')
+    estado = models.ForeignKey('EstadoVenta', related_name='pedidos', on_delete=models.PROTECT)
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     creado = models.DateTimeField(default=timezone.now)
     actualizado = models.DateTimeField(auto_now=True)
     pdf = models.FileField(upload_to='pedidos/pdf/', null=True, blank=True)
-
+    creado_por = models.ForeignKey('Usuario', null=True, blank=True, related_name='ventas_registradas', on_delete=models.SET_NULL)
+    metodo_pago = models.CharField(max_length=30, default='contraentrega')
+    activo = models.BooleanField(default=True)
     def __str__(self):
         return f"Pedido #{self.id} de {self.usuario}"
+
+class Compra(models.Model):
+    usuario = models.ForeignKey('Usuario', related_name='compras_registradas', on_delete=models.SET_NULL, null=True, blank=True)
+    total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    creado = models.DateTimeField(default=timezone.now)
+    actualizado = models.DateTimeField(auto_now=True)
+    observaciones = models.TextField(blank=True, null=True)
+    activo = models.BooleanField(default=True)
+    def __str__(self):
+        return f"Compra #{self.id}"
+
+class DetalleCompra(models.Model):
+    compra = models.ForeignKey('Compra', related_name='detalles', on_delete=models.CASCADE)
+    producto = models.ForeignKey('Producto', on_delete=models.PROTECT)
+    cantidad = models.PositiveIntegerField(default=1)
+    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2)
+    def __str__(self):
+        return f"{self.cantidad} x {self.producto.nombre} (Compra #{self.compra.id})"
 
 class DetallePedido(models.Model):
     pedido = models.ForeignKey(Pedido, related_name='detalles', on_delete=models.CASCADE)
