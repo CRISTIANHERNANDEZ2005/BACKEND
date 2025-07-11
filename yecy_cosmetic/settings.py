@@ -27,7 +27,7 @@ ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
 
 INSTALLED_APPS = [
     # ... apps anteriores ...
-
+    "corsheaders",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -41,6 +41,7 @@ INSTALLED_APPS = [
 
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -51,6 +52,29 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "yecy_cosmetic.urls"
+
+# --- Configuración CORS profesional ---
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = env.list(
+    'CORS_ALLOWED_ORIGINS',
+    default=[
+        'http://localhost:3000',
+        'https://localhost:3000',
+        'https://yecy-cosmetic-frontend.vercel.app', # Cambia por tu dominio real de Vercel
+    ]
+)
+CORS_ALLOW_HEADERS = list(env.list('CORS_ALLOW_HEADERS', default=[])) or [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+CORS_EXPOSE_HEADERS = ['Content-Disposition']
 
 TEMPLATES = [
     {

@@ -8,12 +8,13 @@ from .models import (
     Comentario, Calificacion, Like, Carrito, CarritoItem, 
     LikeComentario, Notificacion, HistorialAccion, EstadoVenta, Compra, DetalleCompra, 
 )
+
 from .serializers import (
     UsuarioSerializer, UsuarioPerfilSerializer, RegistroUsuarioSerializer, LoginSerializer,
     CategoriaSerializer, SubcategoriaSerializer, ProductoSerializer,
     PedidoSerializer, DetallePedidoSerializer, ComentarioSerializer,
     CalificacionSerializer, LikeSerializer, NotificacionSerializer,
-    HistorialAccionSerializer, CarritoSerializer, 
+    HistorialAccionSerializer, CarritoSerializer, EstadoVentaSerializer, 
 )
 from .cart import Cart
 from .utils_pdf import generar_pdf_pedido
