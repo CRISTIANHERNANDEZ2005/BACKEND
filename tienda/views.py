@@ -15,6 +15,7 @@ from .serializers import (
     PedidoSerializer, DetallePedidoSerializer, ComentarioSerializer,
     CalificacionSerializer, LikeSerializer, NotificacionSerializer,
     HistorialAccionSerializer, CarritoSerializer, EstadoVentaSerializer, 
+    CompraSerializer, DetalleCompraSerializer,
 )
 from .cart import Cart
 from .utils_pdf import generar_pdf_pedido
