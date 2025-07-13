@@ -14,7 +14,8 @@ from .views_cliente import (
     PedidoViewSet, DetallePedidoViewSet, ComentarioViewSet, CalificacionViewSet, LikeViewSet,
     ImagenesProductoView,
     RecuperarPasswordView, ResetPasswordView, CambiarPasswordView,
-    HistorialAccionClienteView
+    HistorialAccionClienteView,
+    CategoriaPublicaListView, SubcategoriaPublicaListView
 )
 
 router = DefaultRouter()
@@ -51,4 +52,9 @@ urlpatterns = [
     path('stats/', ClienteStatsView.as_view(), name='stats-cliente'),
     path('productos/<int:producto_id>/imagenes/', ImagenesProductoView.as_view(), name='imagenes-producto'),
     path('', include(router.urls)),
+]
+
+urlpatterns += [
+    path('categorias/', CategoriaPublicaListView.as_view(), name='categorias-publicas'),
+    path('categorias/<int:categoria_id>/subcategorias/', SubcategoriaPublicaListView.as_view(), name='subcategorias-publicas'),
 ] 

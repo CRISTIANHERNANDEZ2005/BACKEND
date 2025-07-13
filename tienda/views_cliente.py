@@ -2,8 +2,8 @@ from rest_framework import generics, status, permissions, viewsets, serializers
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
-from .models import Usuario, Producto, Pedido, DetallePedido, Comentario, Calificacion, Like, Carrito, CarritoItem, LikeComentario, Notificacion, HistorialAccion, ImagenProducto
-from .serializers import UsuarioSerializer, UsuarioPerfilSerializer, RegistroUsuarioSerializer, LoginSerializer, ProductoSerializer, PedidoSerializer, DetallePedidoSerializer, ComentarioSerializer, CalificacionSerializer, LikeSerializer, NotificacionSerializer, HistorialAccionSerializer, CarritoSerializer, ImagenProductoSerializer
+from .models import Usuario, Producto, Pedido, DetallePedido, Comentario, Calificacion, Like, Carrito, CarritoItem, LikeComentario, Notificacion, HistorialAccion, ImagenProducto, Categoria, Subcategoria
+from .serializers import UsuarioSerializer, UsuarioPerfilSerializer, RegistroUsuarioSerializer, LoginSerializer, ProductoSerializer, PedidoSerializer, DetallePedidoSerializer, ComentarioSerializer, CalificacionSerializer, LikeSerializer, NotificacionSerializer, HistorialAccionSerializer, CarritoSerializer, ImagenProductoSerializer, CategoriaSerializer, SubcategoriaSerializer
 from .cart import Cart
 from .utils_pdf import generar_pdf_pedido
 from django.contrib.auth import login, logout
@@ -582,4 +582,20 @@ class ImagenesProductoView(APIView):
                 'nombre': producto.nombre
             },
             'imagenes': serializer.data
-        }) 
+        })
+
+class CategoriaPublicaListView(APIView):
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        categorias = Categoria.objects.filter(activa=True)
+        serializer = CategoriaSerializer(categorias, many=True)
+        return Response(serializer.data)
+
+class SubcategoriaPublicaListView(APIView):
+    permission_classes = [permissions.AllowAny]
+    def get(self, request, categoria_id=None):
+        subcategorias = Subcategoria.objects.filter(activa=True)
+        if categoria_id:
+            subcategorias = subcategorias.filter(categoria_id=categoria_id)
+        serializer = SubcategoriaSerializer(subcategorias, many=True)
+        return Response(serializer.data) 
