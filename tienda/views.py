@@ -1,12 +1,14 @@
-from rest_framework import generics, status, permissions, viewsets
+from rest_framework import generics, status, permissions, viewsets, serializers
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.contrib.auth import login, logout
+from django.db import models
 from .models import (
     Usuario, Categoria, Subcategoria, Producto, Pedido, DetallePedido,
     Comentario, Calificacion, Like, Carrito, CarritoItem, 
     LikeComentario, Notificacion, HistorialAccion, EstadoVenta, Compra, DetalleCompra, 
+    ImagenProducto,
 )
 
 from .serializers import (
@@ -15,7 +17,7 @@ from .serializers import (
     PedidoSerializer, DetallePedidoSerializer, ComentarioSerializer,
     CalificacionSerializer, LikeSerializer, NotificacionSerializer,
     HistorialAccionSerializer, CarritoSerializer, EstadoVentaSerializer, 
-    CompraSerializer, DetalleCompraSerializer,
+    CompraSerializer, DetalleCompraSerializer, ImagenProductoSerializer,
 )
 from .cart import Cart
 from .utils_pdf import generar_pdf_pedido
@@ -1170,3 +1172,198 @@ class LikeViewSet(viewsets.ModelViewSet):
             logger.warning(f"Usuario {self.request.user.numero} intentó eliminar like ajeno #{instance.id}")
             raise PermissionDenied("Solo puedes eliminar tus propios likes.")
         instance.delete()
+
+# -----------------------------
+# VISTAS PARA IMÁGENES DE PRODUCTOS
+# -----------------------------
+
+class ImagenProductoViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestionar imágenes de productos.
+    Permite CRUD completo de imágenes asociadas a productos.
+    """
+    serializer_class = ImagenProductoSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = ImagenProducto.objects.all()
+
+    def get_queryset(self):
+        """
+        Filtra las imágenes según el usuario:
+        - Admins ven todas las imágenes
+        - Usuarios normales solo ven imágenes de productos activos
+        """
+        if getattr(self.request.user, 'es_admin', False):
+            return ImagenProducto.objects.all()
+        return ImagenProducto.objects.filter(producto__activo=True)
+
+    def perform_create(self, serializer):
+        """
+        Crea una nueva imagen de producto con validaciones.
+        """
+        # Validar que el producto existe y está activo
+        producto_id = self.request.data.get('producto')
+        try:
+            producto = Producto.objects.get(id=producto_id, activo=True)
+        except Producto.DoesNotExist:
+            raise serializers.ValidationError("Producto no encontrado o inactivo.")
+        
+        # Solo admins pueden crear imágenes para cualquier producto
+        if not getattr(self.request.user, 'es_admin', False):
+            raise PermissionDenied("Solo administradores pueden crear imágenes de productos.")
+        
+        imagen = serializer.save()
+        logger.info(f"Imagen de producto creada por {self.request.user.numero} para producto {producto.nombre}")
+        
+        # Notificar a administradores sobre nueva imagen
+        admins = Usuario.objects.filter(es_admin=True, esta_activo=True)
+        for admin in admins:
+            if admin != self.request.user:
+                mensaje = f'Nueva imagen añadida al producto "{producto.nombre}" por {self.request.user.nombre}.'
+                Notificacion.objects.create(usuario=admin, tipo='nueva_imagen_producto', mensaje=mensaje)
+
+    def perform_update(self, serializer):
+        """
+        Actualiza una imagen de producto con validaciones.
+        """
+        instance = self.get_object()
+        
+        # Solo admins pueden editar imágenes
+        if not getattr(self.request.user, 'es_admin', False):
+            raise PermissionDenied("Solo administradores pueden editar imágenes de productos.")
+        
+        imagen = serializer.save()
+        logger.info(f"Imagen de producto actualizada por {self.request.user.numero}")
+
+    def perform_destroy(self, instance):
+        """
+        Elimina una imagen de producto con validaciones.
+        """
+        # Solo admins pueden eliminar imágenes
+        if not getattr(self.request.user, 'es_admin', False):
+            raise PermissionDenied("Solo administradores pueden eliminar imágenes de productos.")
+        
+        producto_nombre = instance.producto.nombre
+        instance.delete()
+        logger.info(f"Imagen de producto eliminada por {self.request.user.numero} del producto {producto_nombre}")
+
+class ImagenesProductoView(APIView):
+    """
+    Vista para obtener todas las imágenes de un producto específico.
+    """
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    
+    def get(self, request, producto_id):
+        """
+        Obtiene todas las imágenes de un producto específico.
+        """
+        try:
+            producto = Producto.objects.get(id=producto_id, activo=True)
+        except Producto.DoesNotExist:
+            return Response({'error': 'Producto no encontrado o inactivo.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        imagenes = ImagenProducto.objects.filter(producto=producto).order_by('orden')
+        serializer = ImagenProductoSerializer(imagenes, many=True)
+        
+        return Response({
+            'producto': {
+                'id': producto.id,
+                'nombre': producto.nombre
+            },
+            'imagenes': serializer.data
+        })
+
+class ReordenarImagenesView(APIView):
+    """
+    Vista para reordenar las imágenes de un producto.
+    """
+    permission_classes = [permissions.IsAdminUser]
+    
+    def post(self, request, producto_id):
+        """
+        Reordena las imágenes de un producto según el orden proporcionado.
+        """
+        try:
+            producto = Producto.objects.get(id=producto_id, activo=True)
+        except Producto.DoesNotExist:
+            return Response({'error': 'Producto no encontrado o inactivo.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        orden_imagenes = request.data.get('orden_imagenes', [])
+        if not isinstance(orden_imagenes, list):
+            return Response({'error': 'El campo orden_imagenes debe ser una lista.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validar que todos los IDs existen y pertenecen al producto
+        imagenes_existentes = ImagenProducto.objects.filter(producto=producto)
+        ids_existentes = set(imagenes_existentes.values_list('id', flat=True))
+        ids_solicitados = set(orden_imagenes)
+        
+        if not ids_solicitados.issubset(ids_existentes):
+            return Response({'error': 'Algunos IDs de imágenes no existen o no pertenecen al producto.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Actualizar el orden
+        for orden, imagen_id in enumerate(orden_imagenes):
+            ImagenProducto.objects.filter(id=imagen_id, producto=producto).update(orden=orden)
+        
+        logger.info(f"Imágenes del producto {producto.nombre} reordenadas por {request.user.numero}")
+        
+        # Obtener las imágenes actualizadas
+        imagenes_actualizadas = ImagenProducto.objects.filter(producto=producto).order_by('orden')
+        serializer = ImagenProductoSerializer(imagenes_actualizadas, many=True)
+        
+        return Response({
+            'message': 'Imágenes reordenadas exitosamente.',
+            'imagenes': serializer.data
+        })
+
+class SubirImagenesProductoView(APIView):
+    """
+    Vista para subir múltiples imágenes a un producto.
+    """
+    permission_classes = [permissions.IsAdminUser]
+    
+    def post(self, request, producto_id):
+        """
+        Sube múltiples imágenes a un producto.
+        """
+        try:
+            producto = Producto.objects.get(id=producto_id, activo=True)
+        except Producto.DoesNotExist:
+            return Response({'error': 'Producto no encontrado o inactivo.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        imagenes = request.FILES.getlist('imagenes')
+        descripciones = request.data.getlist('descripciones', [])
+        
+        if not imagenes:
+            return Response({'error': 'No se proporcionaron imágenes.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        imagenes_creadas = []
+        errores = []
+        
+        # Obtener el siguiente orden disponible
+        ultimo_orden = ImagenProducto.objects.filter(producto=producto).aggregate(
+            models.Max('orden')
+        )['orden__max'] or -1
+        
+        for i, imagen in enumerate(imagenes):
+            try:
+                descripcion = descripciones[i] if i < len(descripciones) else ''
+                nueva_imagen = ImagenProducto.objects.create(
+                    producto=producto,
+                    imagen=imagen,
+                    descripcion=descripcion,
+                    orden=ultimo_orden + 1 + i
+                )
+                imagenes_creadas.append(ImagenProductoSerializer(nueva_imagen).data)
+            except Exception as e:
+                errores.append(f"Error al procesar imagen {i+1}: {str(e)}")
+        
+        logger.info(f"{len(imagenes_creadas)} imágenes subidas al producto {producto.nombre} por {request.user.numero}")
+        
+        response_data = {
+            'message': f'{len(imagenes_creadas)} imágenes subidas exitosamente.',
+            'imagenes_creadas': imagenes_creadas
+        }
+        
+        if errores:
+            response_data['errores'] = errores
+        
+        return Response(response_data, status=status.HTTP_201_CREATED)

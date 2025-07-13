@@ -14,7 +14,7 @@ from .views import (
     ProductosDestacadosView, DestacarProductoView, CarritoMigrarView, ComprarView,
     ComprasUsuarioView, ComprasAdminView, 
     EstadoVentaViewSet, CompraViewSet, DetalleCompraViewSet,
-    
+    ImagenProductoViewSet, ImagenesProductoView, ReordenarImagenesView, SubirImagenesProductoView,
 )
 
 router = DefaultRouter()
@@ -29,6 +29,7 @@ router.register(r'likes', LikeViewSet)
 router.register(r'estados-venta', EstadoVentaViewSet)
 router.register(r'compras', CompraViewSet)
 router.register(r'detalles-compra', DetalleCompraViewSet)
+router.register(r'imagenes-producto', ImagenProductoViewSet)
 
 urlpatterns = [
     path('registro/', RegistroUsuarioView.as_view(), name='registro'),
@@ -57,5 +58,9 @@ urlpatterns = [
     path('compras/admin/', ComprasAdminView.as_view(), name='compras-admin'),
     path('stats/cliente/', ClienteStatsView.as_view(), name='stats-cliente'),
     path('stats/admin/', AdminStatsView.as_view(), name='stats-admin'),
+    # Endpoints para imágenes de productos
+    path('productos/<int:producto_id>/imagenes/', ImagenesProductoView.as_view(), name='imagenes-producto'),
+    path('productos/<int:producto_id>/imagenes/reordenar/', ReordenarImagenesView.as_view(), name='reordenar-imagenes'),
+    path('productos/<int:producto_id>/imagenes/subir/', SubirImagenesProductoView.as_view(), name='subir-imagenes-producto'),
     path('', include(router.urls)),
 ]

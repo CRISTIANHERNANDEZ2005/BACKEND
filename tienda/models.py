@@ -93,14 +93,52 @@ class Producto(models.Model):
     activo = models.BooleanField(default=True)
     fecha_creacion = models.DateTimeField(default=timezone.now)
 
+    def clean(self):
+        """
+        Validación profesional: Un producto debe tener al menos una imagen asociada (local o URL) a través de ImagenProducto.
+        Esta validación se aplica en el admin y en operaciones programáticas (no en el serializer DRF).
+        """
+        from django.core.exceptions import ValidationError
+        super().clean()
+        # Solo validar si el producto ya tiene PK (para evitar error en creación inicial)
+        if self.pk:
+            if not self.imagenes.exists():
+                raise ValidationError("Debe asociar al menos una imagen (local o URL) al producto antes de guardarlo.")
+
     def __str__(self):
         return self.nombre
 
 class ImagenProducto(models.Model):
     producto = models.ForeignKey(Producto, related_name='imagenes', on_delete=models.CASCADE)
-    imagen = models.ImageField(upload_to='productos/imagenes/')
+    imagen = models.ImageField(upload_to='productos/imagenes/', null=True, blank=True)
+    url_imagen = models.URLField(max_length=500, blank=True, null=True, help_text="URL de imagen externa")
     descripcion = models.CharField(max_length=255, blank=True, null=True)
     orden = models.PositiveIntegerField(default=0)
+    es_principal = models.BooleanField(default=False, help_text="Indica si es la imagen principal del producto")
+
+    class Meta:
+        ordering = ['orden', 'id']
+
+    def clean(self):
+        """Validación personalizada para asegurar que se proporcione imagen o URL"""
+        from django.core.exceptions import ValidationError
+        if not self.imagen and not self.url_imagen:
+            raise ValidationError("Debe proporcionar una imagen o una URL de imagen.")
+        if self.imagen and self.url_imagen:
+            raise ValidationError("No puede proporcionar tanto imagen como URL. Elija uno de los dos.")
+
+    def save(self, *args, **kwargs):
+        """Asegura que solo una imagen sea principal por producto"""
+        if self.es_principal:
+            # Desmarcar otras imágenes principales del mismo producto
+            ImagenProducto.objects.filter(producto=self.producto, es_principal=True).exclude(pk=self.pk).update(es_principal=False)
+        super().save(*args, **kwargs)
+
+    def get_imagen_url(self):
+        """Retorna la URL de la imagen (local o externa)"""
+        if self.imagen:
+            return self.imagen.url
+        return self.url_imagen
 
     def __str__(self):
         return f"Imagen de {self.producto.nombre} ({self.id})"

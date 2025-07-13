@@ -56,15 +56,53 @@ class SubcategoriaSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class ImagenProductoSerializer(serializers.ModelSerializer):
+    imagen_url = serializers.SerializerMethodField()
+    
     class Meta:
         model = ImagenProducto
-        fields = ('id', 'imagen', 'descripcion', 'orden')
+        fields = ('id', 'imagen', 'url_imagen', 'imagen_url', 'descripcion', 'orden', 'es_principal')
+        read_only_fields = ('imagen_url',)
+    
+    def get_imagen_url(self, obj):
+        """Retorna la URL de la imagen (local o externa)"""
+        return obj.get_imagen_url()
+    
+    def validate(self, data):
+        """Validación personalizada para asegurar que se proporcione imagen o URL"""
+        imagen = data.get('imagen')
+        url_imagen = data.get('url_imagen')
+        
+        if not imagen and not url_imagen:
+            raise serializers.ValidationError("Debe proporcionar una imagen o una URL de imagen.")
+        
+        if imagen and url_imagen:
+            raise serializers.ValidationError("No puede proporcionar tanto imagen como URL. Elija uno de los dos.")
+        
+        return data
 
 class ProductoSerializer(serializers.ModelSerializer):
     imagenes = ImagenProductoSerializer(many=True, read_only=True)
+
     class Meta:
         model = Producto
         fields = '__all__'
+
+    def validate(self, data):
+        """
+        Validación profesional: Un producto debe tener al menos una imagen asociada (local o URL) a través de ImagenProducto.
+        Esta validación aplica en la API REST (creación/actualización).
+        """
+        instance = getattr(self, 'instance', None)
+        imagenes = None
+        # Si es actualización, usar imágenes actuales
+        if instance is not None:
+            imagenes = instance.imagenes.all()
+        # Si es creación, aún no existen imágenes relacionadas
+        request = self.context.get('request')
+        if request and request.method in ['PUT', 'PATCH']:
+            if imagenes is not None and not imagenes.exists():
+                raise serializers.ValidationError("Debe asociar al menos una imagen (local o URL) al producto antes de guardarlo.")
+        return data
 
 
 class CarritoItemProductoSerializer(serializers.ModelSerializer):
