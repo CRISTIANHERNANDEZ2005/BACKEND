@@ -1,12 +1,11 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
     TokenRefreshView,
     TokenVerifyView,
 )
 from .views_cliente import (
-    RegistroUsuarioView, LoginView, LogoutView,
+    CustomTokenObtainPairView, RegistroUsuarioView, LoginView, LogoutView,
     CartView, CartClearView, CarritoMigrarView, ComprarView,
     PerfilUsuarioView, BusquedaProductoView, ProductosDestacadosView,
     ComentarioForoView, LikeComentarioView, NotificacionListView, NotificacionDeleteView, NotificacionMarkReadView,
@@ -15,7 +14,7 @@ from .views_cliente import (
     ImagenesProductoView,
     RecuperarPasswordView, ResetPasswordView, CambiarPasswordView,
     HistorialAccionClienteView,
-    CategoriaPublicaListView, SubcategoriaPublicaListView
+    CategoriaPublicaListView, SubcategoriaPublicaListView, AllProductosView
 )
 
 router = DefaultRouter()
@@ -26,7 +25,7 @@ router.register(r'calificaciones', CalificacionViewSet, basename='cliente-califi
 router.register(r'likes', LikeViewSet, basename='cliente-likes')
 
 urlpatterns = [
-    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('token/verify/', TokenVerifyView.as_view(), name='token_verify'),
     path('registro/', RegistroUsuarioView.as_view(), name='registro'),
@@ -50,6 +49,7 @@ urlpatterns = [
     path('comprar/', ComprarView.as_view(), name='comprar'),
     path('compras/', ComprasUsuarioView.as_view(), name='compras-usuario'),
     path('stats/', ClienteStatsView.as_view(), name='stats-cliente'),
+    path('productos/', AllProductosView.as_view(), name='productos-publicos'),
     path('productos/<int:producto_id>/imagenes/', ImagenesProductoView.as_view(), name='imagenes-producto'),
     path('', include(router.urls)),
 ]
@@ -57,4 +57,4 @@ urlpatterns = [
 urlpatterns += [
     path('categorias/', CategoriaPublicaListView.as_view(), name='categorias-publicas'),
     path('categorias/<int:categoria_id>/subcategorias/', SubcategoriaPublicaListView.as_view(), name='subcategorias-publicas'),
-] 
+]

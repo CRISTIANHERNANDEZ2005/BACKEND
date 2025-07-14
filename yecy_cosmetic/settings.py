@@ -45,6 +45,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "tienda.middleware.CSRFMiddleware",  # Middleware personalizado para CSRF
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -55,14 +56,22 @@ ROOT_URLCONF = "yecy_cosmetic.urls"
 
 # --- Configuración CORS profesional ---
 CORS_ALLOW_CREDENTIALS = True
+# Configura aquí todos los orígenes permitidos para consumir la API, tanto en local como en producción.
+# Puedes agregar dominios de Vercel, Netlify, IPs públicas, etc. Ejemplo:
+# 'https://mi-tienda.vercel.app', 'https://mi-tienda.netlify.app', 'https://midominio.com', etc.
 CORS_ALLOWED_ORIGINS = env.list(
     'CORS_ALLOWED_ORIGINS',
     default=[
-        'http://localhost:3000',
-        'https://localhost:3000',
+        'http://localhost:4173',
+        'https://localhost:4173',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:8000', # Permite consumo local desde backend
         'https://yecy-cosmetic-frontend.vercel.app', # Cambia por tu dominio real de Vercel
+        # Agrega aquí más dominios de frontend según despliegues
     ]
 )
+
 CORS_ALLOW_HEADERS = list(env.list('CORS_ALLOW_HEADERS', default=[])) or [
     'accept',
     'accept-encoding',
@@ -199,6 +208,61 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
+# Configuración de Logging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'logs' / 'yecy_cosmetic.log',
+            'maxBytes': 1024*1024,  # 1MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+            'delay': True,  # Evita problemas de permisos
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'tienda': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
+# Configuración para desarrollo - deshabilitar CSRF para API
+if DEBUG:
+    # Deshabilitar CSRF para API en desarrollo
+    CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
+    CSRF_COOKIE_SECURE = False
+    CSRF_COOKIE_HTTPONLY = False
+    CSRF_USE_SESSIONS = False
+    CSRF_COOKIE_SAMESITE = None
+
 # Archivos estáticos y media
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
@@ -215,59 +279,4 @@ CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels.layers.InMemoryChannelLayer'
     }
-}
-
-# Configuración avanzada de logging profesional
-import sys
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '[{asctime}] {levelname} {name} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'console': {
-            'level': 'DEBUG',
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-            'stream': sys.stdout,
-        },
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.handlers.TimedRotatingFileHandler',
-            'filename': BASE_DIR / 'logs' / 'yecy_cosmetic.log',
-            'when': 'midnight',
-            'backupCount': 30,
-            'formatter': 'verbose',
-            'encoding': 'utf8',
-        },
-        'error_file': {
-            'level': 'ERROR',
-            'class': 'logging.handlers.TimedRotatingFileHandler',
-            'filename': BASE_DIR / 'logs' / 'yecy_cosmetic_errors.log',
-            'when': 'midnight',
-            'backupCount': 30,
-            'formatter': 'verbose',
-            'encoding': 'utf8',
-        },
-    },
-    'loggers': {
-        '': {
-            'handlers': ['console', 'file', 'error_file'],
-            'level': 'DEBUG' if DEBUG else 'WARNING',
-            'propagate': True,
-        },
-        'django': {
-            'handlers': ['console', 'file', 'error_file'],
-            'level': 'DEBUG' if DEBUG else 'WARNING',
-            'propagate': False,
-        },
-    },
 }

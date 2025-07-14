@@ -1,7 +1,19 @@
 from rest_framework import serializers
 from .models import Usuario, Categoria, Subcategoria, Producto, Pedido, DetallePedido, Comentario, Calificacion, Like, LikeComentario, Notificacion, HistorialAccion, EstadoVenta, Compra, DetalleCompra, ImagenProducto, Carrito, CarritoItem
 from django.contrib.auth import authenticate
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+# Serializer personalizado para JWT que usa numero en lugar de username
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    username_field = 'numero'
+    
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        data['numero'] = self.user.numero
+        data['nombre'] = self.user.nombre
+        data['apellido'] = self.user.apellido
+        data['es_admin'] = self.user.es_admin
+        return data
 
 class UsuarioPerfilSerializer(serializers.ModelSerializer):
     class Meta:

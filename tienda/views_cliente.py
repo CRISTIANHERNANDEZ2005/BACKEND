@@ -2,8 +2,15 @@ from rest_framework import generics, status, permissions, viewsets, serializers
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
+from rest_framework_simplejwt.views import TokenObtainPairView
 from .models import Usuario, Producto, Pedido, DetallePedido, Comentario, Calificacion, Like, Carrito, CarritoItem, LikeComentario, Notificacion, HistorialAccion, ImagenProducto, Categoria, Subcategoria
-from .serializers import UsuarioSerializer, UsuarioPerfilSerializer, RegistroUsuarioSerializer, LoginSerializer, ProductoSerializer, PedidoSerializer, DetallePedidoSerializer, ComentarioSerializer, CalificacionSerializer, LikeSerializer, NotificacionSerializer, HistorialAccionSerializer, CarritoSerializer, ImagenProductoSerializer, CategoriaSerializer, SubcategoriaSerializer
+from .serializers import (
+    UsuarioSerializer, UsuarioPerfilSerializer, RegistroUsuarioSerializer, 
+    LoginSerializer, ProductoSerializer, PedidoSerializer, DetallePedidoSerializer, 
+    ComentarioSerializer, CalificacionSerializer, LikeSerializer, NotificacionSerializer, 
+    HistorialAccionSerializer, CarritoSerializer, ImagenProductoSerializer, 
+    CategoriaSerializer, SubcategoriaSerializer, CustomTokenObtainPairSerializer
+)
 from .cart import Cart
 from .utils_pdf import generar_pdf_pedido
 from django.contrib.auth import login, logout
@@ -13,6 +20,10 @@ from datetime import timedelta
 import random
 import logging
 logger = logging.getLogger(__name__)
+
+# Vista personalizada para JWT
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
 
 # Registro de usuario (solo clientes)
 class RegistroUsuarioView(generics.CreateAPIView):
@@ -120,10 +131,14 @@ class CambiarPasswordView(APIView):
 class PerfilUsuarioView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     def get(self, request):
+        if not request.user or not request.user.is_authenticated:
+            return Response({'detail': 'Authentication credentials were not provided.'}, status=401)
         serializer = UsuarioPerfilSerializer(request.user)
         logger.info(f"Usuario {request.user.numero} visualizó su perfil.")
         return Response(serializer.data)
     def put(self, request):
+        if not request.user or not request.user.is_authenticated:
+            return Response({'detail': 'Authentication credentials were not provided.'}, status=401)
         serializer = UsuarioPerfilSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
@@ -132,6 +147,8 @@ class PerfilUsuarioView(APIView):
         logger.warning(f"Error al actualizar perfil de usuario {request.user.numero}: {serializer.errors}")
         return Response(serializer.errors, status=400)
     def delete(self, request):
+        if not request.user or not request.user.is_authenticated:
+            return Response({'detail': 'Authentication credentials were not provided.'}, status=401)
         request.user.esta_activo = False
         request.user.save()
         logger.info(f"Usuario {request.user.numero} desactivó su cuenta.")
@@ -403,17 +420,19 @@ class ComprarView(APIView):
 class ComprasUsuarioView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     def get(self, request):
+        if not request.user or not request.user.is_authenticated:
+            return Response({'detail': 'Authentication credentials were not provided.'}, status=401)
         usuario = request.user
-        pedidos = Pedido.objects.filter(usuario=usuario).order_by('-fecha')
+        pedidos = Pedido.objects.filter(usuario=usuario).order_by('-creado')
         estado = request.query_params.get('estado')
         fecha_inicio = request.query_params.get('fecha_inicio')
         fecha_fin = request.query_params.get('fecha_fin')
         if estado:
             pedidos = pedidos.filter(estado=estado)
         if fecha_inicio:
-            pedidos = pedidos.filter(fecha__gte=fecha_inicio)
+            pedidos = pedidos.filter(creado__gte=fecha_inicio)
         if fecha_fin:
-            pedidos = pedidos.filter(fecha__lte=fecha_fin)
+            pedidos = pedidos.filter(creado__lte=fecha_fin)
         paginator = PageNumberPagination()
         paginator.page_size = 10
         page = paginator.paginate_queryset(pedidos, request)
@@ -422,10 +441,10 @@ class ComprasUsuarioView(APIView):
             detalles = DetallePedido.objects.filter(pedido=pedido)
             data.append({
                 'id': pedido.id,
-                'fecha': pedido.fecha,
-                'estado': pedido.estado,
+                'creado': pedido.creado,
+                'estado': pedido.estado.nombre if pedido.estado else None,
                 'total': float(pedido.total),
-                'factura_url': pedido.factura.url if pedido.factura else None,
+                'factura_url': pedido.pdf.url if pedido.pdf else None,
                 'detalles': [
                     {
                         'producto': d.producto.nombre,
@@ -460,8 +479,45 @@ class ProductoPagination(PageNumberPagination):
     page_size = 12
     page_size_query_param = 'page_size'
     max_page_size = 50
+
+# Listado público de todos los productos
+class AllProductosView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+    def get(self, request):
+        queryset = Producto.objects.filter(activo=True, stock__gt=0)
+        # Filtros opcionales
+        q = request.query_params.get('q', '')
+        categoria = request.query_params.get('categoria')
+        subcategoria = request.query_params.get('subcategoria')
+        precio_min = request.query_params.get('precio_min')
+        precio_max = request.query_params.get('precio_max')
+        if q:
+            queryset = queryset.filter(nombre__icontains=q)
+        if categoria:
+            queryset = queryset.filter(subcategoria__categoria_id=categoria)
+        if subcategoria:
+            queryset = queryset.filter(subcategoria_id=subcategoria)
+        if precio_min:
+            queryset = queryset.filter(precio__gte=precio_min)
+        if precio_max:
+            queryset = queryset.filter(precio__lte=precio_max)
+        ordering = request.query_params.get('ordering', '-fecha_creacion')
+        ordering_fields = ['nombre', 'precio', 'stock', 'fecha_creacion']
+        if ordering.lstrip('-') not in ordering_fields:
+            ordering = '-fecha_creacion'
+        queryset = queryset.order_by(ordering)
+        paginator = ProductoPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        logger.info(f"Listado de productos públicos. Params: {request.query_params}")
+        return paginator.get_paginated_response(ProductoSerializer(page, many=True).data)
+
+    page_size = 12
+    page_size_query_param = 'page_size'
+    max_page_size = 50
 class BusquedaProductoView(APIView):
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
     def get(self, request):
         q = request.query_params.get('q', '')
         categoria = request.query_params.get('categoria')
@@ -499,6 +555,7 @@ class BusquedaProductoView(APIView):
         return paginator.get_paginated_response(ProductoSerializer(page, many=True).data)
 class ProductosDestacadosView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
     def get(self, request):
         ordering = request.query_params.get('ordering', '-fecha_creacion')
         queryset = Producto.objects.filter(activo=True, destacado=True, stock__gt=0)
@@ -513,18 +570,10 @@ class ProductosDestacadosView(APIView):
             queryset = queryset.filter(subcategoria__categoria_id=categoria)
         if subcategoria:
             queryset = queryset.filter(subcategoria_id=subcategoria)
-        if precio_min:
-            queryset = queryset.filter(precio__gte=precio_min)
-        if precio_max:
-            queryset = queryset.filter(precio__lte=precio_max)
-        ordering_fields = ['nombre', 'precio', 'stock', 'fecha_creacion']
-        if ordering.lstrip('-') not in ordering_fields:
-            ordering = '-fecha_creacion'
-        queryset = queryset.order_by(ordering)
         paginator = ProductoPagination()
         page = paginator.paginate_queryset(queryset, request)
-        logger.info(f"Listado de destacados. Params: {request.query_params}")
-        return paginator.get_paginated_response(ProductoSerializer(page, many=True).data)
+        serializer = ProductoSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
 # Pedidos y detalles de pedido del usuario
 class PedidoViewSet(viewsets.ModelViewSet):
@@ -568,7 +617,8 @@ class DetallePedidoViewSet(viewsets.ModelViewSet):
 
 # Imágenes de productos (solo consulta)
 class ImagenesProductoView(APIView):
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
     def get(self, request, producto_id):
         try:
             producto = Producto.objects.get(id=producto_id, activo=True)
@@ -586,13 +636,17 @@ class ImagenesProductoView(APIView):
 
 class CategoriaPublicaListView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
     def get(self, request):
-        categorias = Categoria.objects.filter(activa=True)
+        logger.info(f"[API] CategoriasPublicasView GET consumido desde {request.META.get('REMOTE_ADDR')} | User-Agent: {request.META.get('HTTP_USER_AGENT', '')}")
+        categorias = Categoria.objects.filter(activa=True).order_by('nombre')
         serializer = CategoriaSerializer(categorias, many=True)
         return Response(serializer.data)
 
 class SubcategoriaPublicaListView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+    
     def get(self, request, categoria_id=None):
         subcategorias = Subcategoria.objects.filter(activa=True)
         if categoria_id:
