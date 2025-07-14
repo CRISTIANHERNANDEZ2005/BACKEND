@@ -68,6 +68,7 @@ CORS_ALLOWED_ORIGINS = env.list(
         'http://127.0.0.1:5173',
         'http://127.0.0.1:8000', # Permite consumo local desde backend
         'https://yecy-cosmetic-frontend.vercel.app', # Cambia por tu dominio real de Vercel
+        'https://yeicy-comestic.vercel.app',  # <--- AGREGA ESTA LÍNEA
         # Agrega aquí más dominios de frontend según despliegues
     ]
 )
