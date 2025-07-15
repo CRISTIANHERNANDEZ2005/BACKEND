@@ -9,7 +9,8 @@ from .serializers import (
     LoginSerializer, ProductoSerializer, PedidoSerializer, DetallePedidoSerializer, 
     ComentarioSerializer, CalificacionSerializer, LikeSerializer, NotificacionSerializer, 
     HistorialAccionSerializer, CarritoSerializer, ImagenProductoSerializer, 
-    CategoriaSerializer, SubcategoriaSerializer, CustomTokenObtainPairSerializer
+    CategoriaSerializer, SubcategoriaSerializer, CustomTokenObtainPairSerializer,
+    CategoriaPublicaSerializer, 
 )
 from .cart import Cart
 from .utils_pdf import generar_pdf_pedido
@@ -640,7 +641,7 @@ class CategoriaPublicaListView(APIView):
     def get(self, request):
         logger.info(f"[API] CategoriasPublicasView GET consumido desde {request.META.get('REMOTE_ADDR')} | User-Agent: {request.META.get('HTTP_USER_AGENT', '')}")
         categorias = Categoria.objects.filter(activa=True).order_by('nombre')
-        serializer = CategoriaSerializer(categorias, many=True)
+        serializer = CategoriaPublicaSerializer(categorias, many=True)
         return Response(serializer.data)
 
 class SubcategoriaPublicaListView(APIView):
@@ -652,4 +653,4 @@ class SubcategoriaPublicaListView(APIView):
         if categoria_id:
             subcategorias = subcategorias.filter(categoria_id=categoria_id)
         serializer = SubcategoriaSerializer(subcategorias, many=True)
-        return Response(serializer.data) 
+        return Response(serializer.data)

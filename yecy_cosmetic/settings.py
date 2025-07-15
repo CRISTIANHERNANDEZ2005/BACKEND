@@ -21,7 +21,7 @@ SECRET_KEY = env('SECRET_KEY', default='django-insecure-key')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env('DEBUG', default=True)
 
-ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1', 'backend-mc47.onrender.com'])
 
 # Application definition
 
@@ -67,7 +67,7 @@ CORS_ALLOWED_ORIGINS = env.list(
         'http://localhost:5173',
         'http://127.0.0.1:5173',
         'http://127.0.0.1:8000', # Permite consumo local desde backend
-        'https://yecy-cosmetic-frontend.vercel.app', # Cambia por tu dominio real de Vercel
+        'https://yeicy-comestic.vercel.app', # Cambia por tu dominio real de Vercel
         'https://yeicy-comestic.vercel.app',  # <--- AGREGA ESTA LÍNEA
         # Agrega aquí más dominios de frontend según despliegues
     ]
@@ -110,7 +110,7 @@ WSGI_APPLICATION = "yecy_cosmetic.wsgi.application"
 
 # Configuración de base de datos para producción (Neon.tech via DATABASE_URL)
 DATABASES = {
-    'default': env.db(),
+    'default': env.db('DATABASE_URL'),
 }
 
 
