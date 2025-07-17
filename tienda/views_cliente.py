@@ -10,7 +10,7 @@ from .serializers import (
     ComentarioSerializer, CalificacionSerializer, LikeSerializer, NotificacionSerializer, 
     HistorialAccionSerializer, CarritoSerializer, ImagenProductoSerializer, 
     CategoriaSerializer, SubcategoriaSerializer, CustomTokenObtainPairSerializer,
-    CategoriaPublicaSerializer, 
+    CategoriaPublicaSerializer,
 )
 from .cart import Cart
 from .utils_pdf import generar_pdf_pedido
@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 from django.views.decorators.cache import cache_page
 from django.utils.decorators import method_decorator
 from django.http import HttpResponse
+from django.db.models import Count, Avg
+from django.db import models
 
 # Vista personalizada para JWT
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -590,39 +592,22 @@ class BusquedaProductoView(APIView):
 class ProductosDestacadosView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
-    
     def get(self, request):
         logger.info(f"[API] ProductosDestacadosView GET consumido desde {request.META.get('REMOTE_ADDR')} | User-Agent: {request.META.get('HTTP_USER_AGENT', '')}")
         try:
             ordering = request.query_params.get('ordering', '-fecha_creacion')
-            queryset = Producto.objects.filter(activo=True, destacado=True, stock__gt=0).order_by(ordering if ordering else '-fecha_creacion')
-            q = request.query_params.get('q', '')
-            categoria = request.query_params.get('categoria')
-            subcategoria = request.query_params.get('subcategoria')
-            precio_min = request.query_params.get('precio_min')
-            precio_max = request.query_params.get('precio_max')
-            
-            if q:
-                queryset = queryset.filter(nombre__icontains=q)
-            if categoria:
-                queryset = queryset.filter(subcategoria__categoria_id=categoria)
-            if subcategoria:
-                queryset = queryset.filter(subcategoria_id=subcategoria)
-            if precio_min:
-                queryset = queryset.filter(precio__gte=precio_min)
-            if precio_max:
-                queryset = queryset.filter(precio__lte=precio_max)
-            
+            queryset = Producto.objects.filter(activo=True, destacado=True, stock__gt=0)
+            queryset = queryset.select_related('subcategoria') \
+                .prefetch_related('imagenes') \
+                .annotate(
+                    total_reseñas=Count('comentarios', filter=models.Q(comentarios__activo=True), distinct=True),
+                    total_likes=Count('likes', distinct=True),
+                    calificacion_promedio=Avg('calificaciones__valor')
+                ).order_by(ordering if ordering else '-fecha_creacion')
             paginator = ProductoPagination()
             page = paginator.paginate_queryset(queryset, request)
-            response = paginator.get_paginated_response(ProductoSerializer(page, many=True).data)
-            
-            # Headers de caché profesionales
-            response['Cache-Control'] = 'public, max-age=1800, stale-while-revalidate=900'
-            response['ETag'] = f'"productos-destacados-{queryset.count()}-{timezone.now().timestamp()}"'
-            response['Vary'] = 'Accept-Encoding, Accept'
-            
-            return response
+            logger.info(f"Busqueda avanzada realizada. Params: {request.query_params}")
+            return paginator.get_paginated_response(ProductoSerializer(page, many=True).data)
         except Exception as e:
             logger.error(f"[API] Error en ProductosDestacadosView: {e}")
             return Response({'error': 'Error interno del servidor'}, status=500)

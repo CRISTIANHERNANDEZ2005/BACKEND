@@ -68,30 +68,30 @@ class HistorialAccion(models.Model):
 class Categoria(models.Model):
     nombre = models.CharField(max_length=50, unique=True)
     descripcion = models.TextField(blank=True, null=True)
-    activa = models.BooleanField(default=True)
+    activa = models.BooleanField(default=True, db_index=True)  # Índice para búsquedas frecuentes
 
     def __str__(self):
         return self.nombre
 
 class Subcategoria(models.Model):
-    categoria = models.ForeignKey(Categoria, related_name='subcategorias', on_delete=models.CASCADE)
+    categoria = models.ForeignKey(Categoria, related_name='subcategorias', on_delete=models.CASCADE, db_index=True)
     nombre = models.CharField(max_length=50)
     descripcion = models.TextField(blank=True, null=True)
-    activa = models.BooleanField(default=True)
+    activa = models.BooleanField(default=True, db_index=True)
 
     def __str__(self):
         return f"{self.nombre} ({self.categoria.nombre})"
 
 class Producto(models.Model):
-    subcategoria = models.ForeignKey(Subcategoria, related_name='productos', on_delete=models.CASCADE)
+    subcategoria = models.ForeignKey(Subcategoria, related_name='productos', on_delete=models.CASCADE, db_index=True)
     nombre = models.CharField(max_length=100)
     descripcion = models.TextField()
     precio = models.DecimalField(max_digits=10, decimal_places=2)
     imagen = models.ImageField(upload_to='productos/', null=True, blank=True)
     stock = models.PositiveIntegerField(default=0)
-    destacado = models.BooleanField(default=False)
-    activo = models.BooleanField(default=True)
-    fecha_creacion = models.DateTimeField(default=timezone.now)
+    destacado = models.BooleanField(default=False, db_index=True)
+    activo = models.BooleanField(default=True, db_index=True)
+    fecha_creacion = models.DateTimeField(default=timezone.now, db_index=True)
 
     def clean(self):
         """

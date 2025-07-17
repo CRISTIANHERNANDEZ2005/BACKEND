@@ -94,27 +94,28 @@ class ImagenProductoSerializer(serializers.ModelSerializer):
 
 class ProductoSerializer(serializers.ModelSerializer):
     imagenes = ImagenProductoSerializer(many=True, read_only=True)
+    subcategoria_nombre = serializers.CharField(source='subcategoria.nombre', read_only=True)
+    total_reseñas = serializers.SerializerMethodField()
+    total_likes = serializers.SerializerMethodField()
+    calificacion_promedio = serializers.SerializerMethodField()
 
     class Meta:
         model = Producto
         fields = '__all__'
+        # Agregar los nuevos campos al output
+        extra_fields = ['subcategoria_nombre', 'total_reseñas', 'total_likes', 'calificacion_promedio']
 
-    def validate(self, data):
-        """
-        Validación profesional: Un producto debe tener al menos una imagen asociada (local o URL) a través de ImagenProducto.
-        Esta validación aplica en la API REST (creación/actualización).
-        """
-        instance = getattr(self, 'instance', None)
-        imagenes = None
-        # Si es actualización, usar imágenes actuales
-        if instance is not None:
-            imagenes = instance.imagenes.all()
-        # Si es creación, aún no existen imágenes relacionadas
-        request = self.context.get('request')
-        if request and request.method in ['PUT', 'PATCH']:
-            if imagenes is not None and not imagenes.exists():
-                raise serializers.ValidationError("Debe asociar al menos una imagen (local o URL) al producto antes de guardarlo.")
-        return data
+    def get_total_reseñas(self, obj):
+        return obj.comentarios.filter(activo=True).count()
+
+    def get_total_likes(self, obj):
+        return obj.likes.count()
+
+    def get_calificacion_promedio(self, obj):
+        calificaciones = obj.calificaciones.all()
+        if calificaciones.exists():
+            return round(sum([c.valor for c in calificaciones]) / calificaciones.count(), 2)
+        return None
 
 
 class CarritoItemProductoSerializer(serializers.ModelSerializer):
