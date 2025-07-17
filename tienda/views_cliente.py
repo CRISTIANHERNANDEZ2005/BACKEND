@@ -20,7 +20,11 @@ from django.utils import timezone
 from datetime import timedelta
 import random
 import logging
+from django.core.exceptions import PermissionDenied
 logger = logging.getLogger(__name__)
+from django.views.decorators.cache import cache_page
+from django.utils.decorators import method_decorator
+from django.http import HttpResponse
 
 # Vista personalizada para JWT
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -481,41 +485,70 @@ class ProductoPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 50
 
-# Listado público de todos los productos
+# Vistas públicas para categorías y productos
+class CategoriaPublicaListView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+    
+    def get(self, request):
+        logger.info(f"[API] CategoriaPublicaListView GET consumido desde {request.META.get('REMOTE_ADDR')}")
+        try:
+            queryset = Categoria.objects.filter(activa=True).order_by('nombre')
+            serializer = CategoriaPublicaSerializer(queryset, many=True)
+            response = Response(serializer.data)
+            
+            # Headers de caché profesionales
+            response['Cache-Control'] = 'public, max-age=3600, stale-while-revalidate=1800'
+            response['ETag'] = f'"categorias-{queryset.count()}-{timezone.now().timestamp()}"'
+            response['Vary'] = 'Accept-Encoding'
+            
+            return response
+        except Exception as e:
+            logger.error(f"[API] Error en CategoriaPublicaListView: {e}")
+            return Response({'error': 'Error interno del servidor'}, status=500)
+
+class SubcategoriaPublicaListView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+    
+    def get(self, request, categoria_id):
+        logger.info(f"[API] SubcategoriaPublicaListView GET para categoría {categoria_id}")
+        try:
+            queryset = Subcategoria.objects.filter(activa=True, categoria_id=categoria_id).order_by('nombre')
+            serializer = SubcategoriaSerializer(queryset, many=True)
+            response = Response(serializer.data)
+            
+            # Headers de caché profesionales
+            response['Cache-Control'] = 'public, max-age=1800, stale-while-revalidate=900'
+            response['ETag'] = f'"subcategorias-{categoria_id}-{queryset.count()}-{timezone.now().timestamp()}"'
+            response['Vary'] = 'Accept-Encoding'
+            
+            return response
+        except Exception as e:
+            logger.error(f"[API] Error en SubcategoriaPublicaListView: {e}")
+            return Response({'error': 'Error interno del servidor'}, status=500)
+
 class AllProductosView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
+    
     def get(self, request):
-        queryset = Producto.objects.filter(activo=True, stock__gt=0)
-        # Filtros opcionales
-        q = request.query_params.get('q', '')
-        categoria = request.query_params.get('categoria')
-        subcategoria = request.query_params.get('subcategoria')
-        precio_min = request.query_params.get('precio_min')
-        precio_max = request.query_params.get('precio_max')
-        if q:
-            queryset = queryset.filter(nombre__icontains=q)
-        if categoria:
-            queryset = queryset.filter(subcategoria__categoria_id=categoria)
-        if subcategoria:
-            queryset = queryset.filter(subcategoria_id=subcategoria)
-        if precio_min:
-            queryset = queryset.filter(precio__gte=precio_min)
-        if precio_max:
-            queryset = queryset.filter(precio__lte=precio_max)
-        ordering = request.query_params.get('ordering', '-fecha_creacion')
-        ordering_fields = ['nombre', 'precio', 'stock', 'fecha_creacion']
-        if ordering.lstrip('-') not in ordering_fields:
-            ordering = '-fecha_creacion'
-        queryset = queryset.order_by(ordering)
-        paginator = ProductoPagination()
-        page = paginator.paginate_queryset(queryset, request)
-        logger.info(f"Listado de productos públicos. Params: {request.query_params}")
-        return paginator.get_paginated_response(ProductoSerializer(page, many=True).data)
+        logger.info(f"[API] AllProductosView GET consumido desde {request.META.get('REMOTE_ADDR')}")
+        try:
+            queryset = Producto.objects.filter(activo=True, stock__gt=0).order_by('-fecha_creacion')
+            serializer = ProductoSerializer(queryset, many=True)
+            response = Response(serializer.data)
+            
+            # Headers de caché profesionales
+            response['Cache-Control'] = 'public, max-age=1800, stale-while-revalidate=900'
+            response['ETag'] = f'"productos-{queryset.count()}-{timezone.now().timestamp()}"'
+            response['Vary'] = 'Accept-Encoding'
+            
+            return response
+        except Exception as e:
+            logger.error(f"[API] Error en AllProductosView: {e}")
+            return Response({'error': 'Error interno del servidor'}, status=500)
 
-    page_size = 12
-    page_size_query_param = 'page_size'
-    max_page_size = 50
 class BusquedaProductoView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
@@ -557,24 +590,42 @@ class BusquedaProductoView(APIView):
 class ProductosDestacadosView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
+    
     def get(self, request):
-        ordering = request.query_params.get('ordering', '-fecha_creacion')
-        queryset = Producto.objects.filter(activo=True, destacado=True, stock__gt=0)
-        q = request.query_params.get('q', '')
-        categoria = request.query_params.get('categoria')
-        subcategoria = request.query_params.get('subcategoria')
-        precio_min = request.query_params.get('precio_min')
-        precio_max = request.query_params.get('precio_max')
-        if q:
-            queryset = queryset.filter(nombre__icontains=q)
-        if categoria:
-            queryset = queryset.filter(subcategoria__categoria_id=categoria)
-        if subcategoria:
-            queryset = queryset.filter(subcategoria_id=subcategoria)
-        paginator = ProductoPagination()
-        page = paginator.paginate_queryset(queryset, request)
-        serializer = ProductoSerializer(page, many=True)
-        return paginator.get_paginated_response(serializer.data)
+        logger.info(f"[API] ProductosDestacadosView GET consumido desde {request.META.get('REMOTE_ADDR')} | User-Agent: {request.META.get('HTTP_USER_AGENT', '')}")
+        try:
+            ordering = request.query_params.get('ordering', '-fecha_creacion')
+            queryset = Producto.objects.filter(activo=True, destacado=True, stock__gt=0).order_by(ordering if ordering else '-fecha_creacion')
+            q = request.query_params.get('q', '')
+            categoria = request.query_params.get('categoria')
+            subcategoria = request.query_params.get('subcategoria')
+            precio_min = request.query_params.get('precio_min')
+            precio_max = request.query_params.get('precio_max')
+            
+            if q:
+                queryset = queryset.filter(nombre__icontains=q)
+            if categoria:
+                queryset = queryset.filter(subcategoria__categoria_id=categoria)
+            if subcategoria:
+                queryset = queryset.filter(subcategoria_id=subcategoria)
+            if precio_min:
+                queryset = queryset.filter(precio__gte=precio_min)
+            if precio_max:
+                queryset = queryset.filter(precio__lte=precio_max)
+            
+            paginator = ProductoPagination()
+            page = paginator.paginate_queryset(queryset, request)
+            response = paginator.get_paginated_response(ProductoSerializer(page, many=True).data)
+            
+            # Headers de caché profesionales
+            response['Cache-Control'] = 'public, max-age=1800, stale-while-revalidate=900'
+            response['ETag'] = f'"productos-destacados-{queryset.count()}-{timezone.now().timestamp()}"'
+            response['Vary'] = 'Accept-Encoding, Accept'
+            
+            return response
+        except Exception as e:
+            logger.error(f"[API] Error en ProductosDestacadosView: {e}")
+            return Response({'error': 'Error interno del servidor'}, status=500)
 
 # Pedidos y detalles de pedido del usuario
 class PedidoViewSet(viewsets.ModelViewSet):
@@ -634,23 +685,3 @@ class ImagenesProductoView(APIView):
             },
             'imagenes': serializer.data
         })
-
-class CategoriaPublicaListView(APIView):
-    permission_classes = [permissions.AllowAny]
-    authentication_classes = []
-    def get(self, request):
-        logger.info(f"[API] CategoriasPublicasView GET consumido desde {request.META.get('REMOTE_ADDR')} | User-Agent: {request.META.get('HTTP_USER_AGENT', '')}")
-        categorias = Categoria.objects.filter(activa=True).order_by('nombre')
-        serializer = CategoriaPublicaSerializer(categorias, many=True)
-        return Response(serializer.data)
-
-class SubcategoriaPublicaListView(APIView):
-    permission_classes = [permissions.AllowAny]
-    authentication_classes = []
-    
-    def get(self, request, categoria_id=None):
-        subcategorias = Subcategoria.objects.filter(activa=True)
-        if categoria_id:
-            subcategorias = subcategorias.filter(categoria_id=categoria_id)
-        serializer = SubcategoriaSerializer(subcategorias, many=True)
-        return Response(serializer.data)

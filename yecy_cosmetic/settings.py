@@ -33,7 +33,6 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
-    "channels",
     "django.contrib.staticfiles",
     "tienda",
     "inventario",
@@ -45,6 +44,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.gzip.GZipMiddleware",  # Compresión GZIP
     "tienda.middleware.CSRFMiddleware",  # Middleware personalizado para CSRF
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -54,7 +54,20 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "yecy_cosmetic.urls"
 
+# --- Ejemplo profesional de configuración de CORS y ALLOWED_HOSTS ---
+# En .env para desarrollo:
+#   DEBUG=True
+#   ALLOWED_HOSTS=localhost,127.0.0.1
+#   CORS_ALLOW_ALL_ORIGINS=True
+# En .env para producción:
+#   DEBUG=False
+#   ALLOWED_HOSTS=mi-dominio.com,backend-mc47.onrender.com
+#   CORS_ALLOW_ALL_ORIGINS=False
+#   CORS_ALLOWED_ORIGINS=https://mi-frontend.com,https://otro-frontend.com
+
 # --- Configuración CORS profesional ---
+# En desarrollo puedes usar CORS_ALLOW_ALL_ORIGINS = True, pero en producción usa CORS_ALLOWED_ORIGINS
+CORS_ALLOW_ALL_ORIGINS = env.bool('CORS_ALLOW_ALL_ORIGINS', default=False)  # ¡Nunca True en producción!
 CORS_ALLOW_CREDENTIALS = True
 # Configura aquí todos los orígenes permitidos para consumir la API, tanto en local como en producción.
 # Puedes agregar dominios de Vercel, Netlify, IPs públicas, etc. Ejemplo:
@@ -68,7 +81,6 @@ CORS_ALLOWED_ORIGINS = env.list(
         'http://127.0.0.1:5173',
         'http://127.0.0.1:8000', # Permite consumo local desde backend
         'https://yeicy-comestic.vercel.app', # Cambia por tu dominio real de Vercel
-        'https://yeicy-comestic.vercel.app',  # <--- AGREGA ESTA LÍNEA
         # Agrega aquí más dominios de frontend según despliegues
     ]
 )
@@ -209,7 +221,33 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
-# Configuración de Logging
+# Configuración de caché para optimización de rendimiento
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+        'TIMEOUT': 300,  # 5 minutos
+        'OPTIONS': {
+            'MAX_ENTRIES': 1000,
+        }
+    }
+}
+
+# Configuración de compresión para respuestas HTTP
+MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.gzip.GZipMiddleware",  # Compresión GZIP
+    "tienda.middleware.CSRFMiddleware",  # Middleware personalizado para CSRF
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+# Configuración de logging mejorada
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -222,19 +260,31 @@ LOGGING = {
             'format': '{levelname} {message}',
             'style': '{',
         },
+        'professional': {
+            'format': '[{asctime}] {levelname} {module}: {message}',
+            'style': '{',
+        },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
+            'formatter': 'professional',
         },
         'file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': BASE_DIR / 'logs' / 'yecy_cosmetic.log',
             'maxBytes': 1024*1024,  # 1MB
             'backupCount': 5,
-            'formatter': 'verbose',
+            'formatter': 'professional',
             'delay': True,  # Evita problemas de permisos
+        },
+        'error_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'logs' / 'errors.log',
+            'maxBytes': 1024*1024,  # 1MB
+            'backupCount': 3,
+            'formatter': 'professional',
+            'level': 'ERROR',
         },
     },
     'root': {
@@ -243,17 +293,28 @@ LOGGING = {
     },
     'loggers': {
         'django': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
             'level': 'INFO',
             'propagate': False,
         },
         'tienda': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file', 'error_file'],
             'level': 'INFO',
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['error_file'],
+            'level': 'ERROR',
             'propagate': False,
         },
     },
 }
+
+# --- Seguridad profesional ---
+# ALLOWED_HOSTS y CORS_ALLOWED_ORIGINS deben configurarse por variables de entorno en producción
+# Ejemplo de .env:
+# ALLOWED_HOSTS=mi-dominio.com,localhost,127.0.0.1
+# CORS_ALLOWED_ORIGINS=https://mi-frontend.com,https://otro-frontend.com
 
 # Configuración para desarrollo - deshabilitar CSRF para API
 if DEBUG:
@@ -273,11 +334,3 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 # Carrito de compras
 CART_SESSION_ID = 'cart'
-
-# Django Channels (solo backend, sin Redis)
-ASGI_APPLICATION = 'yecy_cosmetic.asgi.application'
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer'
-    }
-}

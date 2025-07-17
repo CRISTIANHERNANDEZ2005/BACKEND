@@ -195,11 +195,10 @@ class CompraSerializer(serializers.ModelSerializer):
 
 class CategoriaPublicaSerializer(serializers.ModelSerializer):
     subcategorias_count = serializers.SerializerMethodField()
-    imagen = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = Categoria
-        fields = ('id', 'nombre', 'descripcion', 'subcategorias_count', 'imagen')
+        fields = ['id', 'nombre', 'descripcion', 'subcategorias_count']
 
     def get_subcategorias_count(self, obj):
         return obj.subcategorias.filter(activa=True).count()
